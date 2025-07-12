@@ -1,10 +1,13 @@
-const Query = require("@irys/query");
+const irysQuery = require("@irys/query");
 
-async function fetchWithRetry(url, retries = 3, delay = 1000) {
+async function fetchWithRetry(url, retries = 3, delay = 1000, timeout = 5000) {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
       return await response.json();
     } catch (e) {
       if (i === retries - 1) throw e;
@@ -14,12 +17,27 @@ async function fetchWithRetry(url, retries = 3, delay = 1000) {
   }
 }
 
+async function checkApiHealth() {
+  try {
+    await fetchWithRetry("https://testnet.irys.xyz/graphql", 1, 1000, 2000);
+    return true;
+  } catch (e) {
+    console.error("API health check failed:", e.message);
+    return false;
+  }
+}
+
 module.exports = async (req, res) => {
-  const myQuery = new Query({ url: "https://testnet.irys.xyz/graphql" });
+  const myQuery = irysQuery; // Adjust based on actual export
   const path = req.url.split('?')[0];
   const parts = path.split('/');
   const endpoint = parts[2];
   const address = parts[3];
+
+  const isApiHealthy = await checkApiHealth();
+  if (!isApiHealthy) {
+    return res.status(503).json({ error: "Irys testnet API is currently unavailable. Please try again later." });
+  }
 
   try {
     if (endpoint === 'stats') {
@@ -34,6 +52,7 @@ module.exports = async (req, res) => {
         holdings = (BigInt(balanceData.balance) / BigInt(1e18)).toString();
       } catch (e) {
         console.error("Balance fetch error:", e.message);
+        return res.status(500).json({ error: `Failed to fetch balance: ${e.message}` });
       }
 
       // Fetch transactions with retry
@@ -41,8 +60,7 @@ module.exports = async (req, res) => {
       let lastId = null;
       try {
         while (true) {
-          const results = await myQuery
-            .search("irys:transactions")
+          const results = await myQuery.search("irys:transactions")
             .from([address])
             .limit(100)
             .sort("DESC")
@@ -50,11 +68,11 @@ module.exports = async (req, res) => {
           allTxs = allTxs.concat(results);
           if (results.length < 100) break;
           lastId = results[results.length - 1].id;
-          if (allTxs.length >= 5000) break;
+          if (allTxs.length >= 500) break;
         }
       } catch (e) {
         console.error("Transaction fetch error:", e.message);
-        allTxs = []; // Fallback to empty array
+        allTxs = [];
       }
 
       const txCount = allTxs.length;
@@ -80,15 +98,14 @@ module.exports = async (req, res) => {
       let lastId = null;
       try {
         while (true) {
-          const results = await myQuery
-            .search("irys:transactions")
+          const results = await myQuery.search("irys:transactions")
             .limit(100)
             .sort("DESC")
             .after(lastId);
           allTxs = allTxs.concat(results);
           if (results.length < 100) break;
           lastId = results[results.length - 1].id;
-          if (allTxs.length >= 5000) break;
+          if (allTxs.length >= 500) break;
         }
       } catch (e) {
         console.error("Leaderboard transaction fetch error:", e.message);
