@@ -1,0 +1,10 @@
+{
+  "name": "irys-testnet-stats",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "@irys/query": "^0.0.2"
+  }
+}
