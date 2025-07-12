@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Irys Testnet Wallet Stats</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    input, button { padding: 10px; margin: 5px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+  <h1>Irys Testnet Wallet Stats</h1>
+  <div>
+    <input type="text" id="walletAddress" placeholder="Enter EVM wallet address (0x...)" oninput="handleInputChange()" />
+  </div>
+  <div id="stats"></div>
+  <h2>Leaderboard (Top Wallets by Tx Count)</h2>
+  <button onclick="getLeaderboard()">Load Leaderboard</button>
+  <table id="leaderboardTable">
+    <thead>
+      <tr><th>Rank</th><th>Address</th><th>Tx Count</th></tr>
+    </thead>
+    <tbody id="leaderboardBody"></tbody>
+  </table>
+
+  <script>
+    function isValidAddress(address) {
+      return /^0x[a-fA-F0-9]{40}$/.test(address);
+    }
+
+    async function handleInputChange() {
+      const address = document.getElementById("walletAddress").value;
+      if (!isValidAddress(address)) {
+        document.getElementById("stats").innerHTML = "";
+        return;
+      }
+      try {
+        const res = await fetch(`/api/stats/${address}`);
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById("stats").innerHTML = `<p>Error: ${data.error}</p>`;
+        } else {
+          document.getElementById("stats").innerHTML = `
+            <p>Transaction Count: ${data.txCount}</p>
+            <p>Wallet Age: ${data.ageInDays} days</p>
+          `;
+        }
+      } catch (e) {
+        document.getElementById("stats").innerHTML = `<p>Error: Failed to fetch stats</p>`;
+      }
+    }
+
+    async function getLeaderboard() {
+      try {
+        const res = await fetch(`/api/leaderboard`);
+        const data = await res.json();
+        if (data.error) {
+          document.getElementById("leaderboardBody").innerHTML = `<tr><td colspan="3">Error: ${data.error}</td></tr>`;
+        } else {
+          const body = document.getElementById("leaderboardBody");
+          body.innerHTML = "";
+          data.leaderboard.forEach((item, index) => {
+            body.innerHTML += `<tr><td>${index + 1}</td><td>${item.address}</td><td>${item.txCount}</td></tr>`;
+          });
+        }
+      } catch (e) {
+        document.getElementById("leaderboardBody").innerHTML = `<tr><td colspan="3">Error: Failed to fetch leaderboard</td></tr>`;
+      }
+    }
+  </script>
+</body>
+</html>
