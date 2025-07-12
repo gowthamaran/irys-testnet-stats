@@ -1,7 +1,7 @@
 const Query = require("@irys/query");
 
 module.exports = async (req, res) => {
-  const myQuery = new Query({ url: "https://devnet.irys.xyz/graphql" });
+  const myQuery = new Query({ url: "https://arweave.mainnet.irys.xyz/graphql" });
   const path = req.url.split('?')[0];
   const parts = path.split('/');
   const endpoint = parts[2];
