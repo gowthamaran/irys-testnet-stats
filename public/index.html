@@ -18,11 +18,11 @@
     <input type="text" id="walletAddress" placeholder="Enter EVM wallet address (0x...)" oninput="handleInputChange()" />
   </div>
   <div id="stats"></div>
-  <h2>Leaderboard (Top Wallets by Tx Count)</h2>
+  <h2>Leaderboard (Top Wallets)</h2>
   <button onclick="getLeaderboard()">Load Leaderboard</button>
   <table id="leaderboardTable">
     <thead>
-      <tr><th>Rank</th><th>Address</th><th>Tx Count</th></tr>
+      <tr><th>Rank</th><th>Address</th><th>Score</th><th>Tx Count</th><th>Holdings (IRYS)</th></tr>
     </thead>
     <tbody id="leaderboardBody"></tbody>
   </table>
@@ -34,23 +34,25 @@
 
     async function handleInputChange() {
       const address = document.getElementById("walletAddress").value;
-      if (!isValidAddress(address)) {
-        document.getElementById("stats").innerHTML = "";
-        return;
-      }
+      const statsDiv = document.getElementById("stats");
+      statsDiv.innerHTML = "";
+      if (!isValidAddress(address)) return;
+
       try {
         const res = await fetch(`/api/stats/${address}`);
         const data = await res.json();
         if (data.error) {
-          document.getElementById("stats").innerHTML = `<p>Error: ${data.error}</p>`;
+          statsDiv.innerHTML = `<p>Error: ${data.error}</p>`;
         } else {
-          document.getElementById("stats").innerHTML = `
+          statsDiv.innerHTML = `
+            <p>Activity Score: ${data.score.toFixed(2)}</p>
             <p>Transaction Count: ${data.txCount}</p>
             <p>Wallet Age: ${data.ageInDays} days</p>
+            <p>IRYS Holdings: ${data.holdings}</p>
           `;
         }
       } catch (e) {
-        document.getElementById("stats").innerHTML = `<p>Error: Failed to fetch stats</p>`;
+        statsDiv.innerHTML = `<p>Error: Failed to fetch stats</p>`;
       }
     }
 
@@ -58,17 +60,24 @@
       try {
         const res = await fetch(`/api/leaderboard`);
         const data = await res.json();
+        const body = document.getElementById("leaderboardBody");
+        body.innerHTML = "";
         if (data.error) {
-          document.getElementById("leaderboardBody").innerHTML = `<tr><td colspan="3">Error: ${data.error}</td></tr>`;
+          body.innerHTML = `<tr><td colspan="5">Error: ${data.error}</td></tr>`;
         } else {
-          const body = document.getElementById("leaderboardBody");
-          body.innerHTML = "";
           data.leaderboard.forEach((item, index) => {
-            body.innerHTML += `<tr><td>${index + 1}</td><td>${item.address}</td><td>${item.txCount}</td></tr>`;
+            body.innerHTML += `
+              <tr>
+                <td>${index + 1}</td>
+                <td>${item.address}</td>
+                <td>${item.score.toFixed(2)}</td>
+                <td>${item.txCount}</td>
+                <td>${item.holdings}</td>
+              </tr>`;
           });
         }
       } catch (e) {
-        document.getElementById("leaderboardBody").innerHTML = `<tr><td colspan="3">Error: Failed to fetch leaderboard</td></tr>`;
+        document.getElementById("leaderboardBody").innerHTML = `<tr><td colspan="5">Error: Failed to fetch leaderboard</td></tr>`;
       }
     }
   </script>
