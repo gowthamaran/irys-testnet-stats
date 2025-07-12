@@ -1,5 +1,19 @@
 const Query = require("@irys/query");
 
+async function fetchWithRetry(url, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+      return await response.json();
+    } catch (e) {
+      if (i === retries - 1) throw e;
+      console.error(`Retry ${i + 1} failed for ${url}: ${e.message}, waiting ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 module.exports = async (req, res) => {
   const myQuery = new Query({ url: "https://testnet.irys.xyz/graphql" });
   const path = req.url.split('?')[0];
@@ -13,26 +27,34 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: "Wallet address required" });
       }
 
-      // Fetch balance
-      const balanceRes = await fetch(`https://testnet.irys.xyz/account/balance/ethereum?address=${address}`);
-      if (!balanceRes.ok) throw new Error("Failed to fetch balance");
-      const balanceData = await balanceRes.json();
-      const holdings = (BigInt(balanceData.balance) / BigInt(1e18)).toString(); // Convert atomic to IRYS
+      // Fetch balance with retry
+      let holdings = "0";
+      try {
+        const balanceData = await fetchWithRetry(`https://testnet.irys.xyz/account/balance/ethereum?address=${address}`);
+        holdings = (BigInt(balanceData.balance) / BigInt(1e18)).toString();
+      } catch (e) {
+        console.error("Balance fetch error:", e.message);
+      }
 
-      // Fetch transactions
+      // Fetch transactions with retry
       let allTxs = [];
       let lastId = null;
-      while (true) {
-        const results = await myQuery
-          .search("irys:transactions")
-          .from([address])
-          .limit(100)
-          .sort("DESC")
-          .after(lastId);
-        allTxs = allTxs.concat(results);
-        if (results.length < 100) break;
-        lastId = results[results.length - 1].id;
-        if (allTxs.length >= 5000) break;
+      try {
+        while (true) {
+          const results = await myQuery
+            .search("irys:transactions")
+            .from([address])
+            .limit(100)
+            .sort("DESC")
+            .after(lastId);
+          allTxs = allTxs.concat(results);
+          if (results.length < 100) break;
+          lastId = results[results.length - 1].id;
+          if (allTxs.length >= 5000) break;
+        }
+      } catch (e) {
+        console.error("Transaction fetch error:", e.message);
+        allTxs = []; // Fallback to empty array
       }
 
       const txCount = allTxs.length;
@@ -49,24 +71,28 @@ module.exports = async (req, res) => {
         }
       }
 
-      // Calculate score
       const score = txCount * (1 + recencyFactor);
 
       res.status(200).json({ score, txCount, ageInDays, holdings });
     } else if (endpoint === 'leaderboard') {
-      // Fetch recent transactions
+      // Fetch recent transactions with retry
       let allTxs = [];
       let lastId = null;
-      while (true) {
-        const results = await myQuery
-          .search("irys:transactions")
-          .limit(100)
-          .sort("DESC")
-          .after(lastId);
-        allTxs = allTxs.concat(results);
-        if (results.length < 100) break;
-        lastId = results[results.length - 1].id;
-        if (allTxs.length >= 5000) break;
+      try {
+        while (true) {
+          const results = await myQuery
+            .search("irys:transactions")
+            .limit(100)
+            .sort("DESC")
+            .after(lastId);
+          allTxs = allTxs.concat(results);
+          if (results.length < 100) break;
+          lastId = results[results.length - 1].id;
+          if (allTxs.length >= 5000) break;
+        }
+      } catch (e) {
+        console.error("Leaderboard transaction fetch error:", e.message);
+        allTxs = [];
       }
 
       // Aggregate transaction counts
@@ -82,7 +108,7 @@ module.exports = async (req, res) => {
         }
       });
 
-      // Fetch balances and calculate scores for top wallets
+      // Fetch balances and calculate scores
       const currentTimestamp = new Date("July 12, 2025").getTime();
       const leaderboard = [];
       for (const address of Object.keys(walletData).slice(0, 50)) {
@@ -91,14 +117,18 @@ module.exports = async (req, res) => {
         const recencyFactor = (currentTimestamp - latestTimestamp) <= 7 * 24 * 60 * 60 * 1000 ? 0.5 : 0;
         const score = txCount * (1 + recencyFactor);
 
-        const balanceRes = await fetch(`https://testnet.irys.xyz/account/balance/ethereum?address=${address}`);
-        const balanceData = await balanceRes.ok ? await balanceRes.json() : { balance: "0" };
-        const holdings = (BigInt(balanceData.balance) / BigInt(1e18)).toString();
+        let holdings = "0";
+        try {
+          const balanceData = await fetchWithRetry(`https://testnet.irys.xyz/account/balance/ethereum?address=${address}`);
+          holdings = (BigInt(balanceData.balance) / BigInt(1e18)).toString();
+        } catch (e) {
+          console.error(`Balance fetch error for ${address}:`, e.message);
+        }
 
         leaderboard.push({ address, score, txCount, holdings });
       }
 
-      // Sort by score (desc), then txCount (desc), then holdings (desc)
+      // Sort by score, txCount, holdings
       leaderboard.sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         if (b.txCount !== a.txCount) return b.txCount - a.txCount;
@@ -110,7 +140,7 @@ module.exports = async (req, res) => {
       res.status(404).json({ error: "Endpoint not found" });
     }
   } catch (e) {
-    console.error("Error:", e);
-    res.status(500).json({ error: "Failed to fetch data" });
+    console.error("General error:", e);
+    res.status(500).json({ error: `Failed to fetch data: ${e.message}` });
   }
 };
