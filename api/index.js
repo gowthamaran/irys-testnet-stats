@@ -1,4 +1,4 @@
-const irysQuery = require("@irys/query");
+const Query = require("@irys/query");
 
 async function fetchWithRetry(url, retries = 3, delay = 1000, timeout = 5000) {
   for (let i = 0; i < retries; i++) {
@@ -28,7 +28,7 @@ async function checkApiHealth() {
 }
 
 module.exports = async (req, res) => {
-  const myQuery = irysQuery; // Adjust based on actual export
+  const myQuery = Query; // Adjusted to use module directly, assuming Query is exported
   const path = req.url.split('?')[0];
   const parts = path.split('/');
   const endpoint = parts[2];
